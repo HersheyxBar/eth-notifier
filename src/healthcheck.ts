@@ -11,7 +11,11 @@ async function main(): Promise<void> {
     const config = loadConfig()
     console.log('[OK] Config loaded\n\n--- Environment ---')
     console.log(`Network: ${ENV.NETWORK}\nExplorer: ${getExplorerBase(ENV.NETWORK)}\nDedupe: ${ENV.NOTIFY_DEDUPE_SECONDS}s`)
-    try { const keys = ENV.ALCHEMY_API_KEYS; console.log(`[OK] Alchemy: ${keys.length} key(s)`) } catch { console.error('[ERROR] ALCHEMY_API_KEY not set'); errors++ }
+    if (config.providers) {
+      console.log('[OK] Providers configured via config.json')
+    } else {
+      try { const keys = ENV.ALCHEMY_API_KEYS; console.log(`[OK] Alchemy: ${keys.length} key(s)`) } catch { console.error('[ERROR] ALCHEMY_API_KEY not set'); errors++ }
+    }
 
     console.log('\n--- Contracts ---')
     const cw = createContractWatchers(config)

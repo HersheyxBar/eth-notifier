@@ -1,0 +1,100 @@
+{
+  "providers": {
+    "primary": {
+      "type": "alchemy",
+      "apiKey": "env:ALCHEMY_API_KEY"
+    },
+    "fallbacks": [
+      {
+        "type": "infura",
+        "apiKey": "env:INFURA_API_KEY"
+      },
+      {
+        "type": "quicknode",
+        "httpUrl": "env:QUICKNODE_HTTP_URL",
+        "wsUrl": "env:QUICKNODE_WS_URL"
+      },
+      {
+        "type": "ankr",
+        "apiKey": "env:ANKR_API_KEY"
+      }
+    ],
+    "strategy": "priority"
+  },
+  "contracts": [
+    {
+      "name": "Example NFT Collection",
+      "address": "0x0000000000000000000000000000000000000000",
+      "abi": [
+        {
+          "inputs": [
+            { "name": "to", "type": "address" },
+            { "name": "tokenId", "type": "uint256" }
+          ],
+          "name": "mint",
+          "outputs": [],
+          "stateMutability": "payable",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            { "name": "from", "type": "address" },
+            { "name": "to", "type": "address" },
+            { "name": "tokenId", "type": "uint256" }
+          ],
+          "name": "transferFrom",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }
+      ],
+      "watchFunctions": ["mint", "transferFrom"]
+    }
+  ],
+  "wallets": [
+    {
+      "name": "Whale Wallet",
+      "address": "0x0000000000000000000000000000000000000001"
+    },
+    {
+      "name": "Smart Money",
+      "address": "0x0000000000000000000000000000000000000002"
+    }
+  ],
+  "tracking": {
+    "tokenTransfers": {
+      "enabled": false,
+      "tokens": []
+    },
+    "nftTransfers": {
+      "enabled": false,
+      "collections": []
+    },
+    "dexSwaps": {
+      "enabled": false,
+      "dexes": ["uniswap", "sushiswap"]
+    },
+    "largeTransfers": {
+      "enabled": false,
+      "minEth": 100
+    },
+    "contractDeploys": {
+      "enabled": false,
+      "watchCreators": []
+    },
+    "gasAlerts": {
+      "enabled": false,
+      "alertThresholdGwei": 100,
+      "checkIntervalSeconds": 60
+    }
+  },
+  "notifications": {
+    "discord": {
+      "enabled": true
+    },
+    "telegram": {
+      "enabled": true,
+      "chatId": "-123456789"
+    }
+  }
+}

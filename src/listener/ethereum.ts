@@ -57,7 +57,11 @@ export class EthereumListener {
   private async setupSubs(): Promise<void> {
     const cAddrs = Array.from(this.watchers.keys()), wAddrs = Array.from(this.walletWatchers.keys())
     const hasTrack = !!(this.tracking.tokenTransfers?.enabled || this.tracking.nftTransfers?.enabled || this.tracking.dexSwaps?.enabled || this.tracking.largeTransfers?.enabled || this.tracking.contractDeploys?.enabled)
-    if (!cAddrs.length && !wAddrs.length && !hasTrack) { console.warn('[Listener] Nothing to watch'); return }
+    const hasGas = !!this.tracking.gasAlerts?.enabled
+    if (!cAddrs.length && !wAddrs.length && !hasTrack) {
+      if (hasGas) { console.warn('[Listener] Gas alerts enabled (no watchers)'); this.running = true; return }
+      console.warn('[Listener] Nothing to watch'); return
+    }
     if (cAddrs.length) { console.log(`[Listener] ${cAddrs.length} contract(s)`); cAddrs.forEach(a => console.log(`  - ${this.watchers.get(a)!.name} (${a})`)) }
     if (wAddrs.length) { console.log(`[Listener] ${wAddrs.length} wallet(s)`); wAddrs.forEach(a => console.log(`  - ${this.walletWatchers.get(a)!.name} (${a})`)) }
     this.running = true
@@ -111,33 +115,43 @@ export class EthereumListener {
 
   private async processLogs(bn: number): Promise<void> {
     const topics: string[] = []
-    if (this.tracking.tokenTransfers?.enabled) topics.push(ERC20_TRANSFER_TOPIC)
+    if (this.tracking.tokenTransfers?.enabled || this.tracking.nftTransfers?.enabled) topics.push(ERC20_TRANSFER_TOPIC)
     if (this.tracking.nftTransfers?.enabled) { topics.push(ERC1155_SINGLE_TRANSFER_TOPIC); topics.push(ERC1155_BATCH_TRANSFER_TOPIC) }
     if (!topics.length) return
     try {
       let logs: any[]
       if (this.pm) logs = await this.pm.executeWithFailover(p => p.getLogs({ fromBlock: bn, toBlock: bn, topics: [topics] }))
       else logs = await this.alchemy!.core.getLogs({ fromBlock: bn, toBlock: bn, topics: [topics] })
-      for (const log of logs) { if (log.topics[0] === ERC20_TRANSFER_TOPIC && log.topics.length === 3) await this.handleTokenLog(log, bn); else if (log.topics[0] === ERC1155_SINGLE_TRANSFER_TOPIC || log.topics[0] === ERC1155_BATCH_TRANSFER_TOPIC) await this.handleNftLog(log, bn) }
+      for (const log of logs) {
+        const topic0 = log.topics?.[0]
+        if (topic0 === ERC20_TRANSFER_TOPIC) {
+          if (log.topics.length === 3 && this.tracking.tokenTransfers?.enabled) await this.handleErc20Log(log, bn)
+          else if (log.topics.length === 4 && this.tracking.nftTransfers?.enabled) await this.handleErc721Log(log, bn)
+        } else if ((topic0 === ERC1155_SINGLE_TRANSFER_TOPIC || topic0 === ERC1155_BATCH_TRANSFER_TOPIC) && this.tracking.nftTransfers?.enabled) {
+          await this.handleNftLog(log, bn)
+        }
+      }
     } catch (e) { console.error(`[Listener] Log error block ${bn}:`, e) }
   }
 
-  private async handleTokenLog(log: any, bn: number): Promise<void> {
+  private async handleErc20Log(log: any, bn: number): Promise<void> {
     try {
-      const isNft = log.data === '0x' || log.data.length <= 66
       const from = '0x' + log.topics[1].slice(26), to = '0x' + log.topics[2].slice(26)
-      if (isNft && this.tracking.nftTransfers?.enabled) {
-        const cols = this.tracking.nftTransfers?.collections; if (cols?.length && !cols.some(c => c.toLowerCase() === log.address.toLowerCase())) return
-        const tokenId = BigInt(log.topics[3] || log.data).toString()
-        const ev: NftTransferEvent = { sourceType: 'nft_transfer', contractAddress: log.address, collectionName: await this.getCollection(log.address), tokenId, tokenType: 'ERC721', transactionHash: log.transactionHash, from, to, value: '0', blockNumber: bn }
-        if (this.shouldNotify(log.transactionHash + tokenId)) { console.log(`[Listener] NFT: ${ev.collectionName} #${tokenId}`); this.onTx(ev) }
-      } else if (!isNft && this.tracking.tokenTransfers?.enabled) {
-        const toks = this.tracking.tokenTransfers?.tokens; if (toks?.length && !toks.some(t => t.toLowerCase() === log.address.toLowerCase())) return
-        const amt = BigInt(log.data), info = await this.getToken(log.address), amtFmt = formatUnits(amt, info.decimals)
-        const ev: TokenTransferEvent = { sourceType: 'token_transfer', tokenAddress: log.address, tokenSymbol: info.symbol, tokenName: info.name, tokenDecimals: info.decimals, amount: amt.toString(), amountFormatted: amtFmt, transactionHash: log.transactionHash, from, to, value: '0', blockNumber: bn }
-        if (this.shouldNotify(log.transactionHash + log.address)) { console.log(`[Listener] Token: ${amtFmt} ${info.symbol}`); this.onTx(ev) }
-      }
+      const toks = this.tracking.tokenTransfers?.tokens; if (toks?.length && !toks.some(t => t.toLowerCase() === log.address.toLowerCase())) return
+      const amt = BigInt(log.data), info = await this.getToken(log.address), amtFmt = formatUnits(amt, info.decimals)
+      const ev: TokenTransferEvent = { sourceType: 'token_transfer', tokenAddress: log.address, tokenSymbol: info.symbol, tokenName: info.name, tokenDecimals: info.decimals, amount: amt.toString(), amountFormatted: amtFmt, transactionHash: log.transactionHash, from, to, value: '0', blockNumber: bn }
+      if (this.shouldNotify(log.transactionHash + log.address)) { console.log(`[Listener] Token: ${amtFmt} ${info.symbol}`); this.onTx(ev) }
     } catch (e) { console.error('[Listener] Token log error:', e) }
+  }
+
+  private async handleErc721Log(log: any, bn: number): Promise<void> {
+    try {
+      const cols = this.tracking.nftTransfers?.collections; if (cols?.length && !cols.some(c => c.toLowerCase() === log.address.toLowerCase())) return
+      const from = '0x' + log.topics[1].slice(26), to = '0x' + log.topics[2].slice(26)
+      const tokenId = BigInt(log.topics[3]).toString()
+      const ev: NftTransferEvent = { sourceType: 'nft_transfer', contractAddress: log.address, collectionName: await this.getCollection(log.address), tokenId, tokenType: 'ERC721', transactionHash: log.transactionHash, from, to, value: '0', blockNumber: bn }
+      if (this.shouldNotify(log.transactionHash + log.address + tokenId)) { console.log(`[Listener] NFT: ${ev.collectionName} #${tokenId}`); this.onTx(ev) }
+    } catch (e) { console.error('[Listener] ERC721 log error:', e) }
   }
 
   private async handleNftLog(log: any, bn: number): Promise<void> {
@@ -151,7 +165,7 @@ export class EthereumListener {
 
   private async checkLarge(tx: any, bn: number): Promise<void> {
     try {
-      const val = BigInt(tx.value?.toString() || '0'), eth = parseFloat(formatEther(val)), min = this.tracking.largeTransfers?.minEth || 100
+      const val = BigInt(tx.value?.toString() || '0'), eth = parseFloat(formatEther(val)), min = this.tracking.largeTransfers?.minEth ?? 100
       if (eth >= min) { const ev: LargeTransferEvent = { sourceType: 'large_transfer', valueEth: formatEther(val), transactionHash: tx.hash, from: tx.from, to: tx.to || '', value: formatEther(val), blockNumber: bn }; if (this.shouldNotify(tx.hash)) { console.log(`[Listener] Large: ${ev.valueEth} ETH`); this.onTx(ev) } }
     } catch (e) { console.error('[Listener] Large check error:', e) }
   }
@@ -212,23 +226,23 @@ export class EthereumListener {
     this.reconnecting = false
   }
 
-  private handlePendingPm(tx: TransactionResponse): void { const to = tx.to?.toLowerCase(); if (!to) return; const w = this.watchers.get(to); if (!w) return; const d = decodeTransaction({ hash: tx.hash, from: tx.from, to: tx.to || '', value: tx.value, data: tx.data || '0x' }, w); if (d && this.shouldNotify(d.transactionHash)) { console.log(`[Listener] Pending: ${d.functionName}() on ${d.contractName}`); this.onTx(d as DecodedTransaction) } }
-  private handleMinedPm(tx: TransactionResponse, bn: number): void { const to = tx.to?.toLowerCase(); if (!to) return; const w = this.watchers.get(to); if (!w) return; const d = decodeTransaction({ hash: tx.hash, from: tx.from, to: tx.to || '', value: tx.value, data: tx.data || '0x', blockNumber: bn }, w); if (d && this.shouldNotify(d.transactionHash)) { console.log(`[Listener] Mined: ${d.functionName}() on ${d.contractName} (${bn})`); this.persistence?.setLastBlockNumber(bn); this.onTx(d as DecodedTransaction) } }
-  private handleWalletPendingPm(tx: TransactionResponse): void { const from = tx.from?.toLowerCase(); if (!from) return; const w = this.walletWatchers.get(from); if (!w) return; const d = this.makeWalletTxPm(tx, w); if (this.shouldNotify(d.transactionHash)) { console.log(`[Listener] Wallet pending: ${w.name}`); this.onTx(d) } }
-  private handleWalletMinedPm(tx: TransactionResponse, bn: number): void { const from = tx.from?.toLowerCase(); if (!from) return; const w = this.walletWatchers.get(from); if (!w) return; const d = this.makeWalletTxPm(tx, w, bn); if (this.shouldNotify(d.transactionHash)) { console.log(`[Listener] Wallet mined: ${w.name} (${bn})`); this.persistence?.setLastBlockNumber(bn); this.onTx(d) } }
+  private handlePendingPm(tx: TransactionResponse): void { const to = tx.to?.toLowerCase(); if (!to) return; const w = this.watchers.get(to); if (!w) return; const d = decodeTransaction({ hash: tx.hash, from: tx.from, to: tx.to || '', value: tx.value, data: tx.data || '0x' }, w); if (d && this.shouldNotify(d.transactionHash + ':pending')) { console.log(`[Listener] Pending: ${d.functionName}() on ${d.contractName}`); this.onTx(d as DecodedTransaction) } }
+  private handleMinedPm(tx: TransactionResponse, bn: number): void { const to = tx.to?.toLowerCase(); if (!to) return; const w = this.watchers.get(to); if (!w) return; const d = decodeTransaction({ hash: tx.hash, from: tx.from, to: tx.to || '', value: tx.value, data: tx.data || '0x', blockNumber: bn }, w); if (d && this.shouldNotify(d.transactionHash + ':mined')) { console.log(`[Listener] Mined: ${d.functionName}() on ${d.contractName} (${bn})`); this.persistence?.setLastBlockNumber(bn); this.onTx(d as DecodedTransaction) } }
+  private handleWalletPendingPm(tx: TransactionResponse): void { const from = tx.from?.toLowerCase(); if (!from) return; const w = this.walletWatchers.get(from); if (!w) return; const d = this.makeWalletTxPm(tx, w); if (this.shouldNotify(d.transactionHash + ':pending')) { console.log(`[Listener] Wallet pending: ${w.name}`); this.onTx(d) } }
+  private handleWalletMinedPm(tx: TransactionResponse, bn: number): void { const from = tx.from?.toLowerCase(); if (!from) return; const w = this.walletWatchers.get(from); if (!w) return; const d = this.makeWalletTxPm(tx, w, bn); if (this.shouldNotify(d.transactionHash + ':mined')) { console.log(`[Listener] Wallet mined: ${w.name} (${bn})`); this.persistence?.setLastBlockNumber(bn); this.onTx(d) } }
   private makeWalletTxPm(tx: TransactionResponse, w: WalletWatcher, bn?: number): DecodedTransaction { const data = tx.data || '0x', sig = data.length >= 10 ? data.slice(0, 10) : data, val = formatEther(tx.value); return { sourceType: 'wallet', walletName: w.name, contractName: w.name, contractAddress: w.address, functionName: sig === '0x' ? 'transfer' : sig, functionArgs: { to: tx.to || '(create)', data: data.length > 20 ? data.slice(0, 20) + '...' : data }, transactionHash: tx.hash, from: tx.from, to: tx.to || '', value: val, blockNumber: bn } }
 
-  private handlePending(tx: any): void { const to = tx.to?.toLowerCase(); if (!to) return; const w = this.watchers.get(to); if (!w) return; const d = decodeTransaction({ hash: tx.hash, from: tx.from, to: tx.to, value: this.parseBigInt(tx.value), data: tx.input || tx.data || '0x' }, w); if (d && this.shouldNotify(d.transactionHash)) { console.log(`[Listener] Pending: ${d.functionName}() on ${d.contractName}`); this.onTx(d as DecodedTransaction) } }
-  private handleMined(tx: any): void { const t = tx.transaction; if (!t) return; const to = t.to?.toLowerCase(); if (!to) return; const w = this.watchers.get(to); if (!w) return; const d = decodeTransaction({ hash: t.hash, from: t.from, to: t.to, value: this.parseBigInt(t.value), data: t.input || t.data || '0x', blockNumber: tx.blockNumber }, w); if (d && this.shouldNotify(d.transactionHash)) { console.log(`[Listener] Mined: ${d.functionName}() on ${d.contractName} (${tx.blockNumber})`); this.persistence?.setLastBlockNumber(tx.blockNumber); this.onTx(d as DecodedTransaction) } }
-  private handleWalletPending(tx: any): void { const from = tx.from?.toLowerCase(); if (!from) return; const w = this.walletWatchers.get(from); if (!w) return; const d = this.makeWalletTx(tx, w); if (this.shouldNotify(d.transactionHash)) { console.log(`[Listener] Wallet pending: ${w.name}`); this.onTx(d) } }
-  private handleWalletMined(tx: any): void { const t = tx.transaction; if (!t) return; const from = t.from?.toLowerCase(); if (!from) return; const w = this.walletWatchers.get(from); if (!w) return; const d = this.makeWalletTx(t, w, tx.blockNumber); if (this.shouldNotify(d.transactionHash)) { console.log(`[Listener] Wallet mined: ${w.name} (${tx.blockNumber})`); this.persistence?.setLastBlockNumber(tx.blockNumber); this.onTx(d) } }
+  private handlePending(tx: any): void { const to = tx.to?.toLowerCase(); if (!to) return; const w = this.watchers.get(to); if (!w) return; const d = decodeTransaction({ hash: tx.hash, from: tx.from, to: tx.to, value: this.parseBigInt(tx.value), data: tx.input || tx.data || '0x' }, w); if (d && this.shouldNotify(d.transactionHash + ':pending')) { console.log(`[Listener] Pending: ${d.functionName}() on ${d.contractName}`); this.onTx(d as DecodedTransaction) } }
+  private handleMined(tx: any): void { const t = tx.transaction; if (!t) return; const to = t.to?.toLowerCase(); if (!to) return; const w = this.watchers.get(to); if (!w) return; const d = decodeTransaction({ hash: t.hash, from: t.from, to: t.to, value: this.parseBigInt(t.value), data: t.input || t.data || '0x', blockNumber: tx.blockNumber }, w); if (d && this.shouldNotify(d.transactionHash + ':mined')) { console.log(`[Listener] Mined: ${d.functionName}() on ${d.contractName} (${tx.blockNumber})`); this.persistence?.setLastBlockNumber(tx.blockNumber); this.onTx(d as DecodedTransaction) } }
+  private handleWalletPending(tx: any): void { const from = tx.from?.toLowerCase(); if (!from) return; const w = this.walletWatchers.get(from); if (!w) return; const d = this.makeWalletTx(tx, w); if (this.shouldNotify(d.transactionHash + ':pending')) { console.log(`[Listener] Wallet pending: ${w.name}`); this.onTx(d) } }
+  private handleWalletMined(tx: any): void { const t = tx.transaction; if (!t) return; const from = t.from?.toLowerCase(); if (!from) return; const w = this.walletWatchers.get(from); if (!w) return; const d = this.makeWalletTx(t, w, tx.blockNumber); if (this.shouldNotify(d.transactionHash + ':mined')) { console.log(`[Listener] Wallet mined: ${w.name} (${tx.blockNumber})`); this.persistence?.setLastBlockNumber(tx.blockNumber); this.onTx(d) } }
   private makeWalletTx(tx: any, w: WalletWatcher, bn?: number): DecodedTransaction { const data = tx.input || tx.data || '0x', sig = data.length >= 10 ? data.slice(0, 10) : data, val = formatEther(this.parseBigInt(tx.value)); return { sourceType: 'wallet', walletName: w.name, contractName: w.name, contractAddress: w.address, functionName: sig === '0x' ? 'transfer' : sig, functionArgs: { to: tx.to || '(create)', data: data.length > 20 ? data.slice(0, 20) + '...' : data }, transactionHash: tx.hash, from: tx.from, to: tx.to || '', value: val, blockNumber: bn } }
   private parseBigInt(v: any): bigint { try { if (v === undefined || v === null) return BigInt(0); if (typeof v === 'bigint') return v; if (typeof v === 'string') return BigInt(v); if (typeof v === 'number') return BigInt(Math.floor(v)); return BigInt(0) } catch { return BigInt(0) } }
 
   async stop(): Promise<void> {
+    if (this.gasInterval) { clearInterval(this.gasInterval); this.gasInterval = undefined }
     if (!this.running) return
     console.log('[Listener] Stopping...'); this.running = false
-    if (this.gasInterval) clearInterval(this.gasInterval)
     for (const h of this.subs) try { await h.unsubscribe() } catch {}
     this.subs = []
     if (this.pm) await this.pm.shutdown()
