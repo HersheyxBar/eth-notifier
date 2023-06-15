@@ -24,3 +24,8 @@ npm-debug.log*
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Claude/AI artifacts
+.claude/
+*.plan.md
+CLAUDE.md
