@@ -1,0 +1,131 @@
+# ============================================================
+# ETH Notifier Configuration
+# ============================================================
+# Get notified when ETH moves in your watched wallets.
+#
+# Quick setup:
+#   1. Copy this file:  cp config.example.yaml config.yaml
+#   2. Add your wallet addresses below
+#   3. Set up at least one notification channel (Telegram or Discord)
+#   4. Set your provider API key in .env
+#   5. Run:  npm start
+# ============================================================
+
+# -----------------------------------------------------------
+# WALLETS TO WATCH
+# -----------------------------------------------------------
+# Add Ethereum wallet addresses you want to monitor.
+# You'll get notified whenever these wallets send transactions.
+#
+# Find wallet addresses on https://etherscan.io
+# They look like: 0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18
+wallets:
+  - name: "My Main Wallet"
+    address: "0x0000000000000000000000000000000000000001"
+
+  # Add more wallets by copying the pattern above:
+  # - name: "My Second Wallet"
+  #   address: "0x..."
+
+# -----------------------------------------------------------
+# HOW TO GET NOTIFIED
+# -----------------------------------------------------------
+# Pick one or more notification channels.
+# You need at least one enabled to receive alerts.
+notifications:
+
+  # --- Telegram (Recommended - free and easy) ---
+  # Setup steps:
+  #   1. Open Telegram and search for @BotFather
+  #   2. Send /newbot and follow instructions to create a bot
+  #   3. Copy the bot token to your .env file as TELEGRAM_BOT_TOKEN
+  #   4. Search for @userinfobot and send /start to get your chat ID
+  #   5. Put your chat ID below
+  #   6. IMPORTANT: Open your new bot in Telegram and press "Start"
+  telegram:
+    enabled: true
+    chatId: "YOUR_CHAT_ID_HERE"    # Get from @userinfobot on Telegram
+
+  # --- Discord ---
+  # Setup steps:
+  #   1. Open Discord and go to your server
+  #   2. Right-click a channel > Edit Channel > Integrations > Webhooks
+  #   3. Click "New Webhook" and copy the URL
+  #   4. Put the webhook URL in your .env file as DISCORD_WEBHOOK_URL
+  discord:
+    enabled: false
+
+# -----------------------------------------------------------
+# SMART CONTRACT MONITORING (Advanced - optional)
+# -----------------------------------------------------------
+# Watch specific function calls on smart contracts.
+# Most users can skip this section.
+contracts: []
+  # Example - watch an NFT contract for mints:
+  # - name: "Cool NFT"
+  #   address: "0x..."
+  #   abi:
+  #     - inputs:
+  #         - { name: "to", type: "address" }
+  #         - { name: "tokenId", type: "uint256" }
+  #       name: "mint"
+  #       outputs: []
+  #       stateMutability: "payable"
+  #       type: "function"
+  #   watchFunctions:
+  #     - "mint"
+
+# -----------------------------------------------------------
+# BLOCKCHAIN TRACKING (Optional)
+# -----------------------------------------------------------
+# Enable these to monitor broader blockchain activity.
+# Note: These features use more resources and API calls.
+tracking:
+  # Get alerts when large ETH transfers happen
+  largeTransfers:
+    enabled: false
+    minEth: 100              # Minimum ETH amount to trigger alert
+
+  # Track ERC20 token transfers
+  tokenTransfers:
+    enabled: false
+    tokens: []               # Empty = all tokens. Or list specific token addresses.
+
+  # Track NFT transfers
+  nftTransfers:
+    enabled: false
+    collections: []          # Empty = all. Or list specific collection addresses.
+
+  # Detect DEX swaps (Uniswap, SushiSwap, etc.)
+  dexSwaps:
+    enabled: false
+    dexes:
+      - "uniswap"
+      - "sushiswap"
+
+  # Alert when gas prices spike
+  gasAlerts:
+    enabled: false
+    alertThresholdGwei: 100  # Alert when gas exceeds this (in gwei)
+    checkIntervalSeconds: 60
+
+  # Watch for new contract deployments
+  contractDeploys:
+    enabled: false
+    watchCreators: []        # Empty = all. Or list specific deployer addresses.
+
+# -----------------------------------------------------------
+# PROVIDER CONFIGURATION (Advanced)
+# -----------------------------------------------------------
+# By default, ETH Notifier uses Alchemy (set ALCHEMY_API_KEY in .env).
+# You can configure multiple providers for reliability.
+#
+# Uncomment below to use config-based providers instead of .env:
+# providers:
+#   primary:
+#     type: alchemy
+#     apiKey: "env:ALCHEMY_API_KEY"
+#   fallbacks:
+#     - type: infura
+#       apiKey: "env:INFURA_API_KEY"
+#   strategy: priority       # "priority" or "round-robin"

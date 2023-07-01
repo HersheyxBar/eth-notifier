@@ -1,0 +1,57 @@
+# ETH Notifier - systemd service file
+#
+# Install:
+#   sudo cp eth-notifier.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable eth-notifier
+#   sudo systemctl start eth-notifier
+#
+# View logs:
+#   sudo journalctl -u eth-notifier -f
+#
+# The setup.sh script does this automatically.
+
+[Unit]
+Description=ETH Notifier - Ethereum Wallet Monitor
+Documentation=https://github.com/your-username/eth-notifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/eth-notifier
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=5
+
+# Graceful shutdown
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# Resource limits (safe for Raspberry Pi Zero with 512MB RAM)
+MemoryMax=256M
+MemoryHigh=200M
+CPUQuota=50%
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/opt/eth-notifier/.data
+
+# Environment
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/eth-notifier/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=eth-notifier
+
+# Watchdog (optional - uncomment if using watchdog)
+# WatchdogSec=120
+
+[Install]
+WantedBy=multi-user.target

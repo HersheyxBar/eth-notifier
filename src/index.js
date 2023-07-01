@@ -3,6 +3,8 @@ const { EthereumListener } = require('./listener/ethereum')
 const { NotificationDispatcher } = require('./notifications')
 const { StatePersistence } = require('./utils/persistence')
 
+const HEARTBEAT_INTERVAL = 60 * 60 * 1000 // 1 hour
+
 async function main() {
   console.log('========================================\n       ETH Notifier Starting...\n========================================\n')
   try {
@@ -16,7 +18,26 @@ async function main() {
     const providerManager = createProviderManager(config)
     const listener = new EthereumListener({ watchers, walletWatchers, trackingConfig: config.tracking, onTransaction: async d => { try { await dispatcher.dispatch(d) } catch (e) { console.error('[Main] Dispatch failed:', e) } }, persistence, providerManager })
     await listener.start()
-    const shutdown = async sig => { console.log(`\n[Main] ${sig}, shutting down...`); await listener.stop(); await dispatcher.stop(); persistence.forceSave(); console.log('[Main] Done'); process.exit(0) }
+
+    // Heartbeat: log that the service is alive every hour
+    const startTime = Date.now()
+    const heartbeat = setInterval(() => {
+      const uptimeHrs = ((Date.now() - startTime) / 3600000).toFixed(1)
+      const block = persistence.getLastBlockNumber()
+      const mem = process.memoryUsage()
+      const memMB = (mem.rss / 1048576).toFixed(1)
+      console.log(`[Heartbeat] Alive | Uptime: ${uptimeHrs}h | Block: ${block || 'N/A'} | Memory: ${memMB}MB`)
+    }, HEARTBEAT_INTERVAL)
+
+    const shutdown = async sig => {
+      console.log(`\n[Main] ${sig}, shutting down...`)
+      clearInterval(heartbeat)
+      await listener.stop()
+      await dispatcher.stop()
+      persistence.forceSave()
+      console.log('[Main] Done')
+      process.exit(0)
+    }
     process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'))
     process.on('uncaughtException', e => { console.error('[Main] Uncaught:', e); persistence.forceSave() })
     process.on('unhandledRejection', r => console.error('[Main] Unhandled:', r))

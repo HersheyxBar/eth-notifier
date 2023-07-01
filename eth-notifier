@@ -1,0 +1,212 @@
+#!/bin/bash
+# ETH Notifier - Management CLI
+# Usage: ./eth-notifier [command]
+
+set -e
+
+# Find the install directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="${ETH_NOTIFIER_DIR:-$SCRIPT_DIR}"
+SERVICE_NAME="eth-notifier"
+
+# Colors (works in most terminals)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+print_header() {
+    echo ""
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}       ETH Notifier${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo ""
+}
+
+cmd_status() {
+    print_header
+    # Check if systemd service exists and is running
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        echo -e "  Service:  ${GREEN}Running${NC}"
+        echo -e "  Uptime:   $(systemctl show -p ActiveEnterTimestamp --value $SERVICE_NAME 2>/dev/null || echo 'unknown')"
+        echo -e "  PID:      $(systemctl show -p MainPID --value $SERVICE_NAME 2>/dev/null || echo 'unknown')"
+        echo -e "  Memory:   $(systemctl show -p MemoryCurrent --value $SERVICE_NAME 2>/dev/null || echo 'unknown')"
+    elif pgrep -f "node.*src/index.js" > /dev/null 2>&1; then
+        echo -e "  Service:  ${GREEN}Running (standalone)${NC}"
+        echo -e "  PID:      $(pgrep -f 'node.*src/index.js')"
+    else
+        echo -e "  Service:  ${RED}Stopped${NC}"
+    fi
+
+    # Check config
+    if [ -f "$INSTALL_DIR/config.yaml" ] || [ -f "$INSTALL_DIR/config.yml" ] || [ -f "$INSTALL_DIR/config.json" ]; then
+        echo -e "  Config:   ${GREEN}Found${NC}"
+    else
+        echo -e "  Config:   ${RED}Missing${NC} (run: cp config.example.yaml config.yaml)"
+    fi
+
+    # Check .env
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        echo -e "  Env:      ${GREEN}Found${NC}"
+    else
+        echo -e "  Env:      ${RED}Missing${NC} (run: cp .env.example .env)"
+    fi
+
+    # Check state file
+    if [ -f "$INSTALL_DIR/.data/state.json" ]; then
+        local last_block=$(node -e "try{const s=JSON.parse(require('fs').readFileSync('$INSTALL_DIR/.data/state.json','utf8'));console.log('Block:',s.lastBlockNumber||'none','| Last check:',s.lastTimestamp?new Date(s.lastTimestamp).toLocaleString():'never')}catch{console.log('Could not read state')}" 2>/dev/null || echo "Could not read state")
+        echo -e "  State:    $last_block"
+    else
+        echo -e "  State:    No data yet"
+    fi
+
+    # Recent errors
+    echo ""
+    echo "  Recent activity (last 5 lines):"
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        journalctl -u "$SERVICE_NAME" --no-pager -n 5 --output=short 2>/dev/null | sed 's/^/    /' || echo "    (no logs)"
+    else
+        echo "    (service not running via systemd)"
+    fi
+    echo ""
+}
+
+cmd_logs() {
+    local lines="${1:-50}"
+    echo "Showing last $lines log lines (Ctrl+C to exit)..."
+    echo ""
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        journalctl -u "$SERVICE_NAME" --no-pager -n "$lines" -f
+    else
+        echo "Service not running via systemd."
+        echo "If running manually, logs appear in your terminal."
+    fi
+}
+
+cmd_test() {
+    echo "Sending test notification..."
+    cd "$INSTALL_DIR"
+    node src/test-notify.js
+}
+
+cmd_add() {
+    echo ""
+    echo "Add a new wallet to watch"
+    echo "========================="
+    echo ""
+    read -p "Wallet name (e.g., My Savings): " wallet_name
+    read -p "Wallet address (0x...): " wallet_address
+
+    if [[ ! "$wallet_address" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
+        echo -e "${RED}Invalid address format.${NC} It should start with 0x followed by 40 hex characters."
+        exit 1
+    fi
+
+    if [ -f "$INSTALL_DIR/config.yaml" ]; then
+        config_file="$INSTALL_DIR/config.yaml"
+    elif [ -f "$INSTALL_DIR/config.yml" ]; then
+        config_file="$INSTALL_DIR/config.yml"
+    else
+        echo -e "${RED}No config.yaml found.${NC} Run: cp config.example.yaml config.yaml"
+        exit 1
+    fi
+
+    # Add wallet to YAML config
+    echo "" >> "$config_file"
+    echo "  - name: \"$wallet_name\"" >> "$config_file"
+    echo "    address: \"$wallet_address\"" >> "$config_file"
+
+    echo ""
+    echo -e "${GREEN}Added!${NC} Wallet '$wallet_name' ($wallet_address)"
+    echo ""
+    echo "Note: If the service is running, restart it to pick up changes:"
+    echo "  ./eth-notifier restart"
+}
+
+cmd_restart() {
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        echo "Restarting $SERVICE_NAME service..."
+        sudo systemctl restart "$SERVICE_NAME"
+        sleep 2
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            echo -e "${GREEN}Restarted successfully!${NC}"
+        else
+            echo -e "${RED}Failed to restart.${NC} Check logs: ./eth-notifier logs"
+        fi
+    else
+        echo "Service not running via systemd."
+        echo "If running manually, stop it with Ctrl+C and run: npm start"
+    fi
+}
+
+cmd_start() {
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        echo "Service is already running."
+    else
+        echo "Starting $SERVICE_NAME service..."
+        sudo systemctl start "$SERVICE_NAME"
+        sleep 2
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            echo -e "${GREEN}Started!${NC}"
+        else
+            echo -e "${RED}Failed to start.${NC} Check logs: ./eth-notifier logs"
+        fi
+    fi
+}
+
+cmd_stop() {
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        echo "Stopping $SERVICE_NAME service..."
+        sudo systemctl stop "$SERVICE_NAME"
+        echo -e "${GREEN}Stopped.${NC}"
+    else
+        echo "Service is not running."
+    fi
+}
+
+cmd_healthcheck() {
+    echo "Running health check..."
+    cd "$INSTALL_DIR"
+    node src/healthcheck.js
+}
+
+cmd_help() {
+    print_header
+    echo "Usage: ./eth-notifier [command]"
+    echo ""
+    echo "Commands:"
+    echo "  status       Show service status and health"
+    echo "  logs [N]     Show last N log lines (default: 50, live tail)"
+    echo "  test         Send a test notification"
+    echo "  add          Add a new wallet interactively"
+    echo "  start        Start the service"
+    echo "  stop         Stop the service"
+    echo "  restart      Restart the service"
+    echo "  healthcheck  Run full config and provider health check"
+    echo "  help         Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  ./eth-notifier status"
+    echo "  ./eth-notifier logs 100"
+    echo "  ./eth-notifier test"
+    echo ""
+}
+
+# Main command router
+case "${1:-help}" in
+    status)      cmd_status ;;
+    logs)        cmd_logs "${2:-50}" ;;
+    test)        cmd_test ;;
+    add)         cmd_add ;;
+    start)       cmd_start ;;
+    stop)        cmd_stop ;;
+    restart)     cmd_restart ;;
+    healthcheck) cmd_healthcheck ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        echo "Unknown command: $1"
+        cmd_help
+        exit 1
+        ;;
+esac

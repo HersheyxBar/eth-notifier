@@ -1,0 +1,15 @@
+# Logrotate configuration for ETH Notifier
+# Install: sudo cp eth-notifier.logrotate /etc/logrotate.d/eth-notifier
+#
+# Since we use journald for logging, this config handles
+# journal size limits. The main data file is managed by the app.
+
+/opt/eth-notifier/.data/*.json {
+    weekly
+    rotate 4
+    compress
+    missingok
+    notifempty
+    copytruncate
+    maxsize 10M
+}
