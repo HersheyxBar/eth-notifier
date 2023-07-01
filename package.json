@@ -1,26 +1,13 @@
 {
   "name": "eth-notifier",
   "version": "1.0.0",
-  "description": "Monitor Ethereum smart contract function calls and send notifications to Discord and Telegram",
-  "main": "dist/index.js",
+  "description": "Real-time Ethereum blockchain monitoring with Discord and Telegram notifications",
+  "main": "src/index.js",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "watch": "tsc -w",
-    "healthcheck": "ts-node src/healthcheck.ts",
-    "test": "jest",
-    "test:coverage": "jest --coverage"
+    "start": "node src/index.js",
+    "healthcheck": "node src/healthcheck.js"
   },
-  "keywords": [
-    "ethereum",
-    "notifications",
-    "discord",
-    "telegram",
-    "blockchain",
-    "monitoring"
-  ],
-  "author": "",
+  "keywords": ["ethereum", "notifications", "discord", "telegram", "blockchain", "monitoring"],
   "license": "MIT",
   "dependencies": {
     "alchemy-sdk": "^3.4.1",
@@ -28,14 +15,5 @@
     "dotenv": "^16.4.1",
     "ethers": "^6.11.0",
     "node-telegram-bot-api": "^0.66.0"
-  },
-  "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/node": "^20.11.16",
-    "@types/node-telegram-bot-api": "^0.64.4",
-    "jest": "^30.2.0",
-    "ts-jest": "^29.4.6",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
   }
 }

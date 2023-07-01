@@ -1,0 +1,8 @@
+const KNOWN_DEX_ROUTERS = { '0x7a250d5630b4cf539739df2c5dacb4c659f2488d': 'Uniswap V2', '0xe592427a0aece92de3edee1f18e0157c05861564': 'Uniswap V3', '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45': 'Uniswap Universal', '0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f': 'SushiSwap', '0x1111111254fb6c44bac0bed2854e76f90643097d': '1inch', '0xdef1c0ded9bec7f1a1670819833240f027b25eff': '0x Protocol', '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad': 'Uniswap Universal Router' }
+const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const ERC721_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const ERC1155_SINGLE_TRANSFER_TOPIC = '0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62'
+const ERC1155_BATCH_TRANSFER_TOPIC = '0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb'
+const ProviderType = { ALCHEMY: 'alchemy', INFURA: 'infura', QUICKNODE: 'quicknode', ANKR: 'ankr', MORALIS: 'moralis', CHAINSTACK: 'chainstack', GETBLOCK: 'getblock', BLAST: 'blast', POCKET: 'pocket' }
+
+module.exports = { KNOWN_DEX_ROUTERS, ERC20_TRANSFER_TOPIC, ERC721_TRANSFER_TOPIC, ERC1155_SINGLE_TRANSFER_TOPIC, ERC1155_BATCH_TRANSFER_TOPIC, ProviderType }
